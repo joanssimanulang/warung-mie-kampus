@@ -145,4 +145,7 @@
   body {
     overscroll-behavior-y: contain;
   }
+  #lovable-badge {
+    display: none !important;
+  }
 }
