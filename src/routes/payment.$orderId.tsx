@@ -54,29 +54,40 @@ function PaymentPage() {
   // Initial load + start QR request
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      if (!cancelled && !qrUrl && !error) {
+        setError("QRIS timeout — pastikan MIDTRANS_SERVER_KEY sudah diset di environment Cloudflare.");
+        setRefreshing(false);
+      }
+    }, 20000);
+
     (async () => {
       const { data } = await supabase.rpc("get_public_order", { p_order_id: orderId });
       const o = Array.isArray(data) ? data[0] ?? null : data;
       if (cancelled) return;
       setOrder(o);
       const expired = isQrExpired(o?.payment_expires_at);
-      if (o?.qr_url && !expired) setQrUrl(o.qr_url);
+      if (o?.qr_url && !expired) { setQrUrl(o.qr_url); clearTimeout(timeoutId); }
       if (o?.qr_url && expired) setQrUrl(null);
 
       if (!requestedRef.current && o && o.payment_status !== "dibayar" && (!o.qr_url || expired)) {
         requestedRef.current = true;
         try {
           const res = await createQris({ data: { orderId } });
-          if (!cancelled && res?.qr_url) setQrUrl(res.qr_url);
+          if (!cancelled && res?.qr_url) { setQrUrl(res.qr_url); clearTimeout(timeoutId); }
           const { data: freshData } = await supabase.rpc("get_public_order", { p_order_id: orderId });
           const freshOrder = Array.isArray(freshData) ? freshData[0] ?? null : freshData;
           if (!cancelled && freshOrder) setOrder(freshOrder);
         } catch (e: any) {
           if (!cancelled) setError(e?.message ?? "Gagal membuat QRIS");
+          clearTimeout(timeoutId);
         }
+      } else {
+        clearTimeout(timeoutId);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(timeoutId); };
   }, [orderId, createQris]);
 
   // Poll payment status every 4s
